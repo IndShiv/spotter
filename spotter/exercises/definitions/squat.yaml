@@ -1,0 +1,99 @@
+# Reference exercise definition. See spotter/exercises/schema.py for the
+# full field contract and spotter/counting/fsm.py for how each section is
+# consumed. This is the simplest exercise (single signal, two-state cycle)
+# and is meant to be read first.
+
+name: squat
+display_name: "Squat"
+description: >
+  Bodyweight or loaded squat, counted by hip-knee-ankle angle. A rep is one
+  full cycle from standing to depth and back to standing.
+
+camera:
+  recommended_angle: "Front-on, or up to ~45 degrees off-front. Pure side-on works but occludes the far leg at depth."
+  distance: "Full body in frame, with headroom above and floor space below the feet."
+  notes: "Hips through ankles must stay unoccluded through the bottom of the rep; loose clothing over the hip crease can bias the knee angle."
+
+landmarks:
+  required:
+    - left_shoulder
+    - right_shoulder
+    - left_hip
+    - right_hip
+    - left_knee
+    - right_knee
+    - left_ankle
+    - right_ankle
+  min_visibility: 0.6
+  frames_before_hold: 15  # ~0.5s at 30fps
+
+signals:
+  - name: knee_angle
+    type: joint_angle
+    points: [hip, knee, ankle]     # angle at the knee
+    bilateral: average
+    smoothing:
+      filter: one_euro
+      min_cutoff: 1.0
+      beta: 0.4                    # squats move fast at the bottom turnaround; favor low lag
+      d_cutoff: 1.0
+
+  - name: torso_lean_deg
+    type: torso_lean
+    points: [shoulder, hip]
+    bilateral: average
+    smoothing:
+      filter: one_euro
+      min_cutoff: 1.0
+      beta: 0.2                    # lean is a form check, not a timing-critical signal; favor smoothness
+      d_cutoff: 1.0
+
+primary_signal: knee_angle
+
+calibration:
+  enabled: true
+  calibration_reps: 4              # ROM observed over these reps replaces the fixed thresholds below
+  adapt:
+    - state: standing
+      bound: max                   # observed max knee_angle while standing
+      margin_pct: 5
+    - state: bottom
+      bound: min                   # observed min knee_angle at depth
+      margin_pct: 10
+
+fsm:
+  initial_state: standing
+  states:
+    - name: standing
+      description: "Legs extended, standing tall."
+      enter_when: {signal: knee_angle, condition: above, threshold: 160}
+      hysteresis: 6
+    - name: bottom
+      description: "Squat depth reached (thighs at or below parallel)."
+      enter_when: {signal: knee_angle, condition: below, threshold: 100}
+      hysteresis: 6
+
+rep_duration:
+  min_seconds: 0.4                 # faster than this is almost certainly landmark jitter, not a real rep
+  max_seconds: 6.0                 # slower than this likely means the athlete paused or the FSM got stuck
+
+warmup_guard:
+  seconds_in_initial_state: 0.5    # getting into the starting stance shouldn't fire a rep
+
+form_checks:
+  - name: insufficient_depth
+    signal: knee_angle
+    aggregate: min                 # over the just-completed rep
+    condition: above
+    threshold: 115
+    message: "Didn't reach depth"
+
+  - name: excessive_forward_lean
+    signal: torso_lean_deg
+    aggregate: max
+    condition: above
+    threshold: 45
+    message: "Excessive forward lean at depth"
+
+confidence_gate:
+  hold_message: "Spotter can't see you"
