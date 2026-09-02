@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Downloaded MediaPipe model weights (fetched at runtime, not versioned)
+*.task
+models/
+
+# Recorded footage is local-only; sidecar JSON annotations are versioned
+data/videos/*.mp4
+data/videos/*.mov
+data/videos/*.avi
+
+# eval run output (not the checked-in baseline)
+eval/results/
+*.csv
+
+.DS_Store
